@@ -1,0 +1,2 @@
+[console_scripts]
+simple_navigator = rover_navigation.simple_navigator:main

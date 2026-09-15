@@ -1,0 +1,1 @@
+/home/kabir-arora/rover_ws/build/rover_simulation/ament_cmake_environment_hooks/local_setup.sh

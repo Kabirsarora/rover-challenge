@@ -1,0 +1,106 @@
+<?xml version="1.0" ?>
+<sdf version="1.8">
+    <world name="rover_map">
+
+        <model name="ground">
+            <static>true</static>
+
+            <link name="ground_link">
+
+                <collision name="ground_collision">
+                    <geometry>
+                        <plane>
+                            <normal>0 0 1</normal>
+                            <size>20 20</size>
+                        </plane>
+                    </geometry>
+                </collision>
+
+                <visual name="ground_visual">
+                    <geometry>
+                        <plane>
+                            <normal>0 0 1</normal>
+                            <size>20 20</size>
+                        </plane>
+                    </geometry>
+
+                    <material>
+                        <ambient>0.6 0.9 0.6 1</ambient>
+                        <diffuse>0.6 0.9 0.6 1</diffuse>
+                    </material>
+                </visual>
+
+            </link>
+        </model>
+
+        <model name="obstacle_1">
+            <static>true</static>
+
+            <pose>4 0 0.5 0 0 0</pose>
+
+            <link name="obstacle_link">
+
+                <collision name="obstacle_collision">
+                    <geometry>
+                        <box>
+                            <size>1 1 1</size>
+                        </box>
+                    </geometry>
+                </collision>
+
+                <visual name="obstacle_visual">
+                    <geometry>
+                        <box>
+                            <size>1 1 1</size>
+                        </box>
+                    </geometry>
+
+                    <material>
+                        <ambient>0 0 0 1</ambient>
+                        <diffuse>0 0 0 1</diffuse>
+                    </material>
+                </visual>
+
+            </link>
+        </model>
+
+        <model name="rover">
+            <pose>-4 0 0 0 0 0</pose>
+
+            <include>
+                <name>marble_rover</name>
+                <pose>0 0 0 0 0 0</pose>
+                <uri>https://fuel.gazebosim.org/1.0/OpenRobotics/models/MARBLE_HD2_VISUALS_ONLY</uri>
+            </include>
+
+            <link name="collision_link">
+
+                <collision name="rover_collision">
+                    <geometry>
+                        <box>
+                            <size>2.4 1.5 1.5</size>
+                        </box>
+                    </geometry>
+                </collision>
+
+            </link>
+
+            <plugin
+                filename="gz-sim-velocity-control-system"
+                name="gz::sim::systems::VelocityControl">
+            </plugin>
+
+            <plugin
+                filename="gz-sim-pose-publisher-system"
+                name="gz::sim::systems::PosePublisher">
+
+                <publish_model_pose>true</publish_model_pose>
+                <update_frequency>10</update_frequency>
+                <topic>/rover/pose</topic>
+
+            </plugin>
+
+        </model>
+
+    </world>
+</sdf>

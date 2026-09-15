@@ -1,0 +1,17 @@
+[0.826s] Invoking command in '/home/kabir-arora/rover_ws/build/rover_navigation': DEBUGINFOD_URLS=https://debuginfod.ubuntu.com PYTHONPATH=/home/kabir-arora/rover_ws/build/rover_navigation/prefix_override:/usr/lib/python3/dist-packages/colcon_core/task/python/colcon_distutils_commands:/home/kabir-arora/rover_ws/install/rover_navigation/lib/python3.12/site-packages:${PYTHONPATH} /usr/bin/python3 -W ignore:setup.py install is deprecated -W ignore:easy_install command is deprecated setup.py develop --editable --build-directory /home/kabir-arora/rover_ws/build/rover_navigation/build --no-deps symlink_data
+[1.043s] running develop
+[1.159s] running egg_info
+[1.169s] writing rover_navigation.egg-info/PKG-INFO
+[1.170s] writing dependency_links to rover_navigation.egg-info/dependency_links.txt
+[1.170s] writing entry points to rover_navigation.egg-info/entry_points.txt
+[1.170s] writing requirements to rover_navigation.egg-info/requires.txt
+[1.170s] writing top-level names to rover_navigation.egg-info/top_level.txt
+[1.192s] reading manifest file 'rover_navigation.egg-info/SOURCES.txt'
+[1.193s] writing manifest file 'rover_navigation.egg-info/SOURCES.txt'
+[1.205s] running build_ext
+[1.205s] Creating /home/kabir-arora/rover_ws/install/rover_navigation/lib/python3.12/site-packages/rover-navigation.egg-link (link to .)
+[1.206s] Installing simple_navigator script to /home/kabir-arora/rover_ws/install/rover_navigation/lib/rover_navigation
+[1.206s] 
+[1.206s] Installed /home/kabir-arora/rover_ws/build/rover_navigation
+[1.207s] running symlink_data
+[1.239s] Invoked command in '/home/kabir-arora/rover_ws/build/rover_navigation' returned '0': DEBUGINFOD_URLS=https://debuginfod.ubuntu.com PYTHONPATH=/home/kabir-arora/rover_ws/build/rover_navigation/prefix_override:/usr/lib/python3/dist-packages/colcon_core/task/python/colcon_distutils_commands:/home/kabir-arora/rover_ws/install/rover_navigation/lib/python3.12/site-packages:${PYTHONPATH} /usr/bin/python3 -W ignore:setup.py install is deprecated -W ignore:easy_install command is deprecated setup.py develop --editable --build-directory /home/kabir-arora/rover_ws/build/rover_navigation/build --no-deps symlink_data
