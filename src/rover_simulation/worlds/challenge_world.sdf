@@ -34,7 +34,7 @@
         </model>
         <model name="obstacle_1">
             <static>true</static>
-            <pose>-6 -6 0.5 0 0 0</pose>
+            <pose>-7 -7 0.5 0 0 0</pose>
             <link name="obstacle_link">
                 <collision name="obstacle_collision">
                     <geometry><box><size>1 1 1</size></box></geometry>
@@ -51,7 +51,7 @@
 
         <model name="obstacle_2">
             <static>true</static>
-            <pose>0 -6 0.5 0 0 0</pose>
+            <pose>7 -6 0.5 0 0 0</pose>
             <link name="obstacle_link">
                 <collision name="obstacle_collision">
                     <geometry><box><size>1 1 1</size></box></geometry>
@@ -68,7 +68,7 @@
 
         <model name="obstacle_3">
             <static>true</static>
-            <pose>6 -5 0.5 0 0 0</pose>
+            <pose>-7 6 0.5 0 0 0</pose>
             <link name="obstacle_link">
                 <collision name="obstacle_collision">
                     <geometry><box><size>1 1 1</size></box></geometry>
@@ -85,7 +85,7 @@
 
         <model name="obstacle_4">
             <static>true</static>
-            <pose>-5 4 0.5 0 0 0</pose>
+            <pose>6 7 0.5 0 0 0</pose>
             <link name="obstacle_link">
                 <collision name="obstacle_collision">
                     <geometry><box><size>1 1 1</size></box></geometry>
@@ -102,7 +102,7 @@
 
         <model name="obstacle_5">
             <static>true</static>
-            <pose>5 5 0.5 0 0 0</pose>
+            <pose>1 1 0.5 0 0 0</pose>
             <link name="obstacle_link">
                 <collision name="obstacle_collision">
                     <geometry><box><size>1 1 1</size></box></geometry>

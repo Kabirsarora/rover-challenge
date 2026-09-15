@@ -60,8 +60,6 @@ class SimpleNavigator(Node):
             self.stop()
             return
 
-        self.spawn_waypoint_markers()
-
         if self.phase == 'complete':
             self.stop()
             return
@@ -72,6 +70,8 @@ class SimpleNavigator(Node):
 
         if self.current_waypoint is None:
             return
+
+        self.spawn_waypoint_markers()
 
         if self.waypoint_timed_out():
             self.stop()
@@ -184,11 +184,9 @@ class SimpleNavigator(Node):
         if self.markers_spawned or not self.marker_client.service_is_ready():
             return
 
-        closest_index = min(
-            self.remaining_waypoints,
-            key=lambda index: self.distance_to(self.waypoints[index]))
+        selected_index = self.current_waypoint
         for index, waypoint in enumerate(self.waypoints):
-            selected = index == closest_index
+            selected = index == selected_index
             color = '1 1 0 1' if selected else '0 1 1 1'
             marker_sdf = f'''<sdf version="1.8">
   <model name="waypoint_marker_{index + 1}">
