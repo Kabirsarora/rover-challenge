@@ -143,12 +143,12 @@
                     </material>
                 </visual>
 
-                <sensor name="front_lidar" type="lidar">
+                <sensor name="front_lidar" type="gpu_lidar">
                     <pose>0.4 0 0.2 0 0 0</pose>
                     <topic>/rover/scan</topic>
                     <update_rate>10</update_rate>
                     <always_on>true</always_on>
-                    <visualize>true</visualize>
+                    <visualize>false</visualize>
                     <ray>
                         <scan>
                             <horizontal>
@@ -186,6 +186,12 @@
         <plugin
             filename="gz-sim-user-commands-system"
             name="gz::sim::systems::UserCommands">
+        </plugin>
+
+        <plugin
+            filename="gz-sim-sensors-system"
+            name="gz::sim::systems::Sensors">
+            <render_engine>ogre2</render_engine>
         </plugin>
 
     </world>
