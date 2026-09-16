@@ -11,6 +11,11 @@ from sensor_msgs.msg import LaserScan
 
 
 class SimpleNavigator(Node):
+    DRIVE_SPEED = 1.0
+    MAX_TURN_SPEED = 1.2
+    TURN_GAIN = 2.4
+    AVOIDANCE_DRIVE_SECONDS = 1.3
+
     def __init__(self):
         super().__init__('simple_navigator')
 
@@ -148,7 +153,7 @@ class SimpleNavigator(Node):
 
         if self.phase == 'avoid_drive':
             self.drive_forward()
-            if time.monotonic() - self.avoidance_started_at >= 1.5:
+            if time.monotonic() - self.avoidance_started_at >= self.AVOIDANCE_DRIVE_SECONDS:
                 self.stop()
                 self.phase = 'resume_path'
                 self.get_logger().info('Resuming path toward waypoint')
@@ -294,13 +299,15 @@ class SimpleNavigator(Node):
     def rotate_to(self, target_heading):
         error = self.angle_error(target_heading)
         command = Twist()
-        command.angular.z = max(-0.7, min(0.7, 1.5 * error))
+        command.angular.z = max(
+            -self.MAX_TURN_SPEED,
+            min(self.MAX_TURN_SPEED, self.TURN_GAIN * error))
         self.cmd_publisher.publish(command)
         self.get_logger().debug('Rotating to face a direction')
 
     def drive_forward(self):
         command = Twist()
-        command.linear.x = 0.5
+        command.linear.x = self.DRIVE_SPEED
         self.cmd_publisher.publish(command)
 
     def stop(self):
