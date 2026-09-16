@@ -11,10 +11,10 @@ from sensor_msgs.msg import LaserScan
 
 
 class SimpleNavigator(Node):
-    DRIVE_SPEED = 1.0
-    MAX_TURN_SPEED = 1.2
-    TURN_GAIN = 2.4
-    AVOIDANCE_DRIVE_SECONDS = 1.3
+    DRIVE_SPEED = 1.25
+    MAX_TURN_SPEED = 1.45
+    TURN_GAIN = 2.8
+    AVOIDANCE_DRIVE_SECONDS = 1.1
 
     def __init__(self):
         super().__init__('simple_navigator')
