@@ -12,16 +12,27 @@ from sensor_msgs.msg import LaserScan
 
 
 class SimpleNavigator(Node):
-    DRIVE_SPEED = 0.9
+    DRIVE_SPEED = 1.8
     MIN_DRIVE_SPEED = 0.18
     AXIS_SLOWDOWN_DISTANCE = 0.8
-    MAX_TURN_SPEED = 0.9
-    TURN_GAIN = 1.8
+    MAX_TURN_SPEED = 1.8
+    TURN_GAIN = 3.6
     OBSTACLE_DETECTION_DISTANCE = 1.25
     SIDE_CLEARANCE_DISTANCE = 0.75
-    AVOIDANCE_DRIVE_SECONDS = 1.4
+    AVOIDANCE_DRIVE_SECONDS = 0.7
     WAYPOINT_TOLERANCE = 0.1
     WAYPOINT_HIT_RADIUS = 0.62
+    WAYPOINT_OBSTACLE_CLEARANCE = 2.5
+    WAYPOINT_START_CLEARANCE = 1.0
+    WAYPOINT_SEPARATION = 1.0
+    ROVER_START = (-4.0, 0.0)
+    OBSTACLE_CENTERS = (
+        (-1.5, 0.0),
+        (7.0, -6.0),
+        (-7.0, 6.0),
+        (6.0, 7.0),
+        (1.0, 1.0),
+    )
 
     def __init__(self):
         super().__init__('simple_navigator')
@@ -54,10 +65,7 @@ class SimpleNavigator(Node):
         self.marker_deletions_in_flight = set()
 
         generator = random.SystemRandom()
-        self.waypoints = [
-            (generator.uniform(-8.0, 8.0), generator.uniform(-8.0, 8.0))
-            for _ in range(3)
-        ]
+        self.waypoints = self.generate_waypoints(generator)
         self.remaining_waypoints = list(range(len(self.waypoints)))
         self.current_waypoint = None
         self.phase = 'select_waypoint'
@@ -65,6 +73,32 @@ class SimpleNavigator(Node):
         for index, waypoint in enumerate(self.waypoints):
             self.get_logger().info(
                 f'  waypoint {index + 1}: x={waypoint[0]:.2f}, y={waypoint[1]:.2f}')
+
+    def generate_waypoints(self, generator):
+        waypoints = []
+        while len(waypoints) < 3:
+            candidate = (
+                generator.uniform(-8.0, 8.0),
+                generator.uniform(-8.0, 8.0),
+            )
+            near_obstacle = any(
+                math.hypot(candidate[0] - obstacle[0], candidate[1] - obstacle[1])
+                < self.WAYPOINT_OBSTACLE_CLEARANCE
+                for obstacle in self.OBSTACLE_CENTERS
+            )
+            near_start = math.hypot(
+                candidate[0] - self.ROVER_START[0],
+                candidate[1] - self.ROVER_START[1],
+            ) < self.WAYPOINT_START_CLEARANCE
+            near_waypoint = any(
+                math.hypot(candidate[0] - waypoint[0], candidate[1] - waypoint[1])
+                < self.WAYPOINT_SEPARATION
+                for waypoint in waypoints
+            )
+            if near_obstacle or near_start or near_waypoint:
+                continue
+            waypoints.append(candidate)
+        return waypoints
 
     def pose_callback(self, message):
         self.position = (message.position.x, message.position.y)
