@@ -11,10 +11,11 @@ from sensor_msgs.msg import LaserScan
 
 
 class SimpleNavigator(Node):
-    DRIVE_SPEED = 1.25
-    MAX_TURN_SPEED = 1.45
-    TURN_GAIN = 2.8
-    AVOIDANCE_DRIVE_SECONDS = 1.1
+    DRIVE_SPEED = 1.15
+    MAX_TURN_SPEED = 1.0
+    TURN_GAIN = 2.0
+    AVOIDANCE_DRIVE_SECONDS = 1.5
+    OBSTACLE_IGNORE_SECONDS = 2.0
 
     def __init__(self):
         super().__init__('simple_navigator')
@@ -40,6 +41,7 @@ class SimpleNavigator(Node):
         self.avoidance_direction = None
         self.avoidance_turn_target = None
         self.avoidance_attempts = 0
+        self.ignore_obstacles_until = 0.0
         self.markers_spawned = False
 
         generator = random.Random(7)
@@ -89,7 +91,9 @@ class SimpleNavigator(Node):
             self.phase = 'select_waypoint'
             return
 
-        if self.phase in ('move_x', 'move_y') and self.front_obstacle_distance() <= 2.0:
+        if (self.phase in ('move_x', 'move_y') and
+                time.monotonic() >= self.ignore_obstacles_until and
+                self.front_obstacle_distance() <= 2.0):
             self.stop()
             self.phase = 'avoid_turn_right'
             self.avoidance_turn_target = self.normalize_angle(self.yaw - math.pi / 2.0)
@@ -157,6 +161,7 @@ class SimpleNavigator(Node):
             self.drive_forward()
             if time.monotonic() - self.avoidance_started_at >= self.AVOIDANCE_DRIVE_SECONDS:
                 self.stop()
+                self.ignore_obstacles_until = time.monotonic() + self.OBSTACLE_IGNORE_SECONDS
                 self.phase = 'resume_path'
                 self.get_logger().info('Resuming path toward waypoint')
             return
