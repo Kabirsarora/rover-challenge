@@ -18,8 +18,11 @@ class SimpleNavigator(Node):
     MAX_TURN_SPEED = 1.8
     TURN_GAIN = 3.6
     OBSTACLE_DETECTION_DISTANCE = 1.25
+    OBSTACLE_SLOWDOWN_DISTANCE = 2.0
     SIDE_CLEARANCE_DISTANCE = 0.75
-    AVOIDANCE_DRIVE_SECONDS = 0.7
+    AVOIDANCE_SPEED = 0.9
+    AVOIDANCE_TURN_SPEED = 0.9
+    AVOIDANCE_DRIVE_SECONDS = 1.4
     WAYPOINT_TOLERANCE = 0.1
     WAYPOINT_HIT_RADIUS = 0.62
     WAYPOINT_OBSTACLE_CLEARANCE = 2.5
@@ -57,7 +60,7 @@ class SimpleNavigator(Node):
         self.avoidance_started_at = None
         self.avoidance_direction = None
         self.avoidance_turn_target = None
-        self.avoidance_attempts = 0
+        self.avoidance_path_heading = None
         self.markers_spawned = False
         self.startup_marker_cleanup_done = False
         self.hidden_waypoint_markers = set()
@@ -145,74 +148,33 @@ class SimpleNavigator(Node):
         if (self.phase in ('move_x', 'move_y') and
                 self.front_obstacle_distance() <= self.OBSTACLE_DETECTION_DISTANCE):
             self.stop()
-            self.phase = 'avoid_turn_right'
-            self.avoidance_turn_target = self.normalize_angle(self.yaw - math.pi / 2.0)
-            self.avoidance_started_at = time.monotonic()
-            self.avoidance_attempts = 0
-            self.get_logger().warn(
-                f'Obstacle detected and distance is approximately '
-                f'{self.front_obstacle_distance():.2f} m')
+            self.begin_obstacle_avoidance()
             return
 
-        if self.phase == 'avoid_turn_right':
-            self.rotate_to(self.avoidance_turn_target)
+        if self.phase == 'avoid_turn':
+            self.rotate_to(self.avoidance_turn_target, self.AVOIDANCE_TURN_SPEED)
             if abs(self.angle_error(self.avoidance_turn_target)) < 0.08:
                 self.stop()
-                self.phase = 'avoid_check_right'
-                self.get_logger().info('Checking right side')
-            return
-
-        if self.phase == 'avoid_check_right':
-            if self.front_obstacle_distance() > self.SIDE_CLEARANCE_DISTANCE:
-                self.get_logger().info('Right side clear')
-                self.start_avoidance_drive('right')
-            else:
-                self.get_logger().warn('Right side blocked')
-                self.phase = 'avoid_turn_left'
-                self.avoidance_turn_target = self.normalize_angle(self.yaw + math.pi)
-            return
-
-        if self.phase == 'avoid_turn_left':
-            self.rotate_to(self.avoidance_turn_target)
-            if abs(self.angle_error(self.avoidance_turn_target)) < 0.08:
-                self.stop()
-                self.phase = 'avoid_check_left'
-                self.get_logger().info('Checking left side')
-            return
-
-        if self.phase == 'avoid_check_left':
-            if self.front_obstacle_distance() > self.SIDE_CLEARANCE_DISTANCE:
-                self.get_logger().info('Left side clear')
-                self.start_avoidance_drive('left')
-            else:
-                self.get_logger().warn('Left side blocked; trying another direction')
-                self.phase = 'avoid_turn_extra'
-                self.avoidance_turn_target = self.normalize_angle(self.yaw + math.pi / 2.0)
-            return
-
-        if self.phase == 'avoid_turn_extra':
-            self.rotate_to(self.avoidance_turn_target)
-            if abs(self.angle_error(self.avoidance_turn_target)) < 0.08:
-                self.stop()
-                self.phase = 'avoid_check_extra'
-                self.get_logger().info('Checking another direction')
-            return
-
-        if self.phase == 'avoid_check_extra':
-            if self.front_obstacle_distance() > self.SIDE_CLEARANCE_DISTANCE:
-                self.get_logger().info('Another direction is clear')
-                self.start_avoidance_drive('extra')
-            else:
-                self.stop()
-                self.get_logger().warn('All checked directions are blocked; waiting')
+                self.avoidance_started_at = time.monotonic()
+                self.phase = 'avoid_drive'
+                self.get_logger().info(
+                    f'Moving {self.avoidance_direction} around the obstacle')
             return
 
         if self.phase == 'avoid_drive':
-            self.drive_forward()
+            self.drive_forward(self.AVOIDANCE_SPEED)
             if time.monotonic() - self.avoidance_started_at >= self.AVOIDANCE_DRIVE_SECONDS:
                 self.stop()
+                self.avoidance_turn_target = self.avoidance_path_heading
+                self.phase = 'avoid_return'
+            return
+
+        if self.phase == 'avoid_return':
+            self.rotate_to(self.avoidance_turn_target, self.AVOIDANCE_TURN_SPEED)
+            if abs(self.angle_error(self.avoidance_turn_target)) < 0.08:
+                self.stop()
                 self.phase = 'resume_path'
-                self.get_logger().info('Resuming path toward waypoint')
+                self.get_logger().info('Obstacle cleared; resuming waypoint path')
             return
 
         if self.phase == 'resume_path':
@@ -319,6 +281,8 @@ class SimpleNavigator(Node):
                 self.MIN_DRIVE_SPEED,
                 self.DRIVE_SPEED * min(1.0, abs(axis_error) / self.AXIS_SLOWDOWN_DISTANCE),
             )
+            if self.front_obstacle_distance() < self.OBSTACLE_SLOWDOWN_DISTANCE:
+                speed = min(speed, self.AVOIDANCE_SPEED)
             self.drive_forward(speed)
 
     def delete_hit_waypoint_markers(self):
@@ -437,32 +401,74 @@ class SimpleNavigator(Node):
             return 'move_x'
         return 'move_y'
 
-    def start_avoidance_drive(self, direction):
-        self.avoidance_direction = direction
-        self.avoidance_started_at = time.monotonic()
-        self.phase = 'avoid_drive'
-        self.get_logger().info(f'Moving {direction} to begin going around the obstacle')
+    def begin_obstacle_avoidance(self):
+        self.avoidance_path_heading = self.current_axis_heading()
+        right_clearance = self.obstacle_distance_between(-90.0, -35.0)
+        left_clearance = self.obstacle_distance_between(35.0, 90.0)
+        self.avoidance_direction = self.choose_avoidance_direction(
+            right_clearance, left_clearance)
+        turn = -math.pi / 2.0 if self.avoidance_direction == 'right' else math.pi / 2.0
+        self.avoidance_turn_target = self.normalize_angle(
+            self.avoidance_path_heading + turn)
+        self.phase = 'avoid_turn'
+        self.get_logger().warn(
+            f'Obstacle detected at {self.front_obstacle_distance():.2f} m; '
+            f'choosing {self.avoidance_direction} side '
+            f'(right={right_clearance:.2f} m, left={left_clearance:.2f} m)')
+
+    def choose_avoidance_direction(self, right_clearance, left_clearance):
+        target = self.waypoints[self.current_waypoint]
+        target_dx = target[0] - self.position[0]
+        target_dy = target[1] - self.position[1]
+        right_heading = self.avoidance_path_heading - math.pi / 2.0
+        left_heading = self.avoidance_path_heading + math.pi / 2.0
+        right_progress = (
+            math.cos(right_heading) * target_dx + math.sin(right_heading) * target_dy)
+        left_progress = (
+            math.cos(left_heading) * target_dx + math.sin(left_heading) * target_dy)
+
+        right_is_clear = right_clearance > self.SIDE_CLEARANCE_DISTANCE
+        left_is_clear = left_clearance > self.SIDE_CLEARANCE_DISTANCE
+        if right_is_clear and left_is_clear:
+            return 'right' if right_progress >= left_progress else 'left'
+        if right_is_clear:
+            return 'right'
+        if left_is_clear:
+            return 'left'
+        return 'right' if right_clearance >= left_clearance else 'left'
+
+    def current_axis_heading(self):
+        target = self.waypoints[self.current_waypoint]
+        if self.phase == 'move_x':
+            return 0.0 if target[0] > self.position[0] else math.pi
+        return math.pi / 2.0 if target[1] > self.position[1] else -math.pi / 2.0
 
     def waypoint_timed_out(self):
         return time.monotonic() - self.waypoint_started_at > 20.0
 
     def front_obstacle_distance(self):
+        return self.obstacle_distance_between(-15.0, 15.0)
+
+    def obstacle_distance_between(self, minimum_degrees, maximum_degrees):
         if self.scan is None or not self.scan.ranges:
             return float('inf')
+        minimum_angle = math.radians(minimum_degrees)
+        maximum_angle = math.radians(maximum_degrees)
         closest = float('inf')
         for index, distance in enumerate(self.scan.ranges):
             angle = self.scan.angle_min + index * self.scan.angle_increment
-            if abs(self.normalize_angle(angle)) <= math.radians(15.0):
+            if minimum_angle <= self.normalize_angle(angle) <= maximum_angle:
                 if math.isfinite(distance) and distance >= self.scan.range_min:
                     closest = min(closest, distance)
         return closest
 
-    def rotate_to(self, target_heading):
+    def rotate_to(self, target_heading, maximum_speed=None):
         error = self.angle_error(target_heading)
+        speed_limit = self.MAX_TURN_SPEED if maximum_speed is None else maximum_speed
         command = Twist()
         command.angular.z = max(
-            -self.MAX_TURN_SPEED,
-            min(self.MAX_TURN_SPEED, self.TURN_GAIN * error))
+            -speed_limit,
+            min(speed_limit, self.TURN_GAIN * error))
         self.cmd_publisher.publish(command)
         self.get_logger().debug('Rotating to face a direction')
 
