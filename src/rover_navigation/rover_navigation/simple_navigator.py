@@ -48,7 +48,7 @@ class SimpleNavigator(Node):
         self.pending_marker_deletions = set()
         self.marker_deletions_in_flight = set()
 
-        generator = random.Random(7)
+        generator = random.Random()
         self.waypoints = [
             (generator.uniform(-8.0, 8.0), generator.uniform(-8.0, 8.0))
             for _ in range(3)
