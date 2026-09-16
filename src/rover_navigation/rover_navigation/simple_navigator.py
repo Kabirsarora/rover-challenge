@@ -16,6 +16,8 @@ class SimpleNavigator(Node):
     TURN_GAIN = 2.0
     AVOIDANCE_DRIVE_SECONDS = 1.5
     OBSTACLE_IGNORE_SECONDS = 2.0
+    WAYPOINT_TOLERANCE = 0.1
+    WAYPOINT_HIT_RADIUS = 0.55
 
     def __init__(self):
         super().__init__('simple_navigator')
@@ -85,6 +87,10 @@ class SimpleNavigator(Node):
             return
 
         self.spawn_waypoint_markers()
+
+        if self.current_waypoint_hit():
+            self.complete_current_waypoint('hit')
+            return
 
         if self.waypoint_timed_out():
             self.stop()
@@ -251,13 +257,8 @@ class SimpleNavigator(Node):
         self.log_status(f'Current rover position: x={self.position[0]:.2f}, y={self.position[1]:.2f}')
         self.log_status(f'Distance remaining: {distance:.2f} m')
 
-        if distance <= 0.1:
-            self.stop()
-            self.get_logger().info(f'Waypoint {self.current_waypoint + 1} reached')
-            self.queue_waypoint_marker_deletion(self.current_waypoint)
-            self.remaining_waypoints.remove(self.current_waypoint)
-            self.current_waypoint = None
-            self.phase = 'select_waypoint'
+        if distance <= self.WAYPOINT_TOLERANCE:
+            self.complete_current_waypoint('reached')
             return
 
         if self.phase == 'move_x':
@@ -272,16 +273,24 @@ class SimpleNavigator(Node):
         else:
             self.drive_forward()
 
-        if self.phase == 'move_x' and abs(target[0] - self.position[0]) <= 0.1:
+        if self.phase == 'move_x' and abs(target[0] - self.position[0]) <= self.WAYPOINT_TOLERANCE:
             self.stop()
             self.phase = 'move_y'
-        elif self.phase == 'move_y' and abs(target[1] - self.position[1]) <= 0.1:
-            self.stop()
-            self.get_logger().info(f'Waypoint {self.current_waypoint + 1} reached')
-            self.queue_waypoint_marker_deletion(self.current_waypoint)
-            self.remaining_waypoints.remove(self.current_waypoint)
-            self.current_waypoint = None
-            self.phase = 'select_waypoint'
+        elif self.phase == 'move_y' and abs(target[1] - self.position[1]) <= self.WAYPOINT_TOLERANCE:
+            self.complete_current_waypoint('reached')
+
+    def current_waypoint_hit(self):
+        return self.distance_to(self.waypoints[self.current_waypoint]) <= self.WAYPOINT_HIT_RADIUS
+
+    def complete_current_waypoint(self, reason):
+        waypoint_index = self.current_waypoint
+        self.stop()
+        self.get_logger().info(
+            f'Waypoint {waypoint_index + 1} {reason}; removing marker')
+        self.queue_waypoint_marker_deletion(waypoint_index)
+        self.remaining_waypoints.remove(waypoint_index)
+        self.current_waypoint = None
+        self.phase = 'select_waypoint'
 
     def queue_waypoint_marker_deletion(self, index):
         self.pending_marker_deletions.add(index)
@@ -327,7 +336,7 @@ class SimpleNavigator(Node):
 
     def next_axis_phase(self):
         target = self.waypoints[self.current_waypoint]
-        if abs(target[0] - self.position[0]) > 0.1:
+        if abs(target[0] - self.position[0]) > self.WAYPOINT_TOLERANCE:
             return 'move_x'
         return 'move_y'
 
