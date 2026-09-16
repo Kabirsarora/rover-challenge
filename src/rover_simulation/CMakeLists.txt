@@ -25,6 +25,6 @@ endif()
 
 ament_package()
 
-install(DIRECTORY models worlds launch
+install(DIRECTORY models worlds
   DESTINATION share/${PROJECT_NAME}
 )
