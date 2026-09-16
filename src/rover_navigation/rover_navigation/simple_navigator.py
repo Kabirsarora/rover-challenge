@@ -22,7 +22,9 @@ class SimpleNavigator(Node):
     SIDE_CLEARANCE_DISTANCE = 0.75
     AVOIDANCE_SPEED = 0.9
     AVOIDANCE_TURN_SPEED = 0.9
-    AVOIDANCE_DRIVE_SECONDS = 1.4
+    AVOIDANCE_SIDESTEP_SECONDS = 1.4
+    AVOIDANCE_PASS_SECONDS = 2.2
+    EMERGENCY_STOP_DISTANCE = 0.45
     WAYPOINT_TOLERANCE = 0.1
     WAYPOINT_HIT_RADIUS = 0.62
     WAYPOINT_OBSTACLE_CLEARANCE = 2.5
@@ -61,6 +63,7 @@ class SimpleNavigator(Node):
         self.avoidance_direction = None
         self.avoidance_turn_target = None
         self.avoidance_path_heading = None
+        self.avoidance_axis_phase = None
         self.markers_spawned = False
         self.startup_marker_cleanup_done = False
         self.hidden_waypoint_markers = set()
@@ -151,30 +154,45 @@ class SimpleNavigator(Node):
             self.begin_obstacle_avoidance()
             return
 
-        if self.phase == 'avoid_turn':
+        if self.phase == 'avoid_turn_side':
             self.rotate_to(self.avoidance_turn_target, self.AVOIDANCE_TURN_SPEED)
             if abs(self.angle_error(self.avoidance_turn_target)) < 0.08:
                 self.stop()
                 self.avoidance_started_at = time.monotonic()
-                self.phase = 'avoid_drive'
+                self.phase = 'avoid_sidestep'
                 self.get_logger().info(
                     f'Moving {self.avoidance_direction} around the obstacle')
             return
 
-        if self.phase == 'avoid_drive':
+        if self.phase == 'avoid_sidestep':
             self.drive_forward(self.AVOIDANCE_SPEED)
-            if time.monotonic() - self.avoidance_started_at >= self.AVOIDANCE_DRIVE_SECONDS:
+            if (time.monotonic() - self.avoidance_started_at >=
+                    self.AVOIDANCE_SIDESTEP_SECONDS):
                 self.stop()
                 self.avoidance_turn_target = self.avoidance_path_heading
-                self.phase = 'avoid_return'
+                self.phase = 'avoid_turn_forward'
             return
 
-        if self.phase == 'avoid_return':
+        if self.phase == 'avoid_turn_forward':
             self.rotate_to(self.avoidance_turn_target, self.AVOIDANCE_TURN_SPEED)
             if abs(self.angle_error(self.avoidance_turn_target)) < 0.08:
                 self.stop()
+                self.avoidance_started_at = time.monotonic()
+                self.phase = 'avoid_pass'
+                self.get_logger().info('Passing the obstacle before resuming the path')
+            return
+
+        if self.phase == 'avoid_pass':
+            if self.front_obstacle_distance() <= self.EMERGENCY_STOP_DISTANCE:
+                self.stop()
+                self.phase = self.avoidance_axis_phase
+                self.get_logger().warn('New obstacle ahead; recalculating avoidance')
+                return
+            self.drive_forward(self.AVOIDANCE_SPEED)
+            if time.monotonic() - self.avoidance_started_at >= self.AVOIDANCE_PASS_SECONDS:
+                self.stop()
                 self.phase = 'resume_path'
-                self.get_logger().info('Obstacle cleared; resuming waypoint path')
+                self.get_logger().info('Obstacle passed; resuming waypoint path')
             return
 
         if self.phase == 'resume_path':
@@ -286,15 +304,15 @@ class SimpleNavigator(Node):
             self.drive_forward(speed)
 
     def delete_hit_waypoint_markers(self):
-        for waypoint_index in list(self.remaining_waypoints):
-            if waypoint_index in self.hidden_waypoint_markers:
-                continue
-            if self.distance_to(self.waypoints[waypoint_index]) > self.WAYPOINT_HIT_RADIUS:
-                continue
+        waypoint_index = self.current_waypoint
+        if waypoint_index in self.hidden_waypoint_markers:
+            return
+        if self.distance_to(self.waypoints[waypoint_index]) > self.WAYPOINT_HIT_RADIUS:
+            return
 
-            self.get_logger().info(
-                f'Waypoint {waypoint_index + 1} hit; removing marker')
-            self.hide_waypoint_marker(waypoint_index)
+        self.get_logger().info(
+            f'Waypoint {waypoint_index + 1} hit; removing marker')
+        self.hide_waypoint_marker(waypoint_index)
 
     def complete_current_waypoint(self, reason):
         waypoint_index = self.current_waypoint
@@ -402,6 +420,7 @@ class SimpleNavigator(Node):
         return 'move_y'
 
     def begin_obstacle_avoidance(self):
+        self.avoidance_axis_phase = self.phase
         self.avoidance_path_heading = self.current_axis_heading()
         right_clearance = self.obstacle_distance_between(-90.0, -35.0)
         left_clearance = self.obstacle_distance_between(35.0, 90.0)
@@ -410,7 +429,7 @@ class SimpleNavigator(Node):
         turn = -math.pi / 2.0 if self.avoidance_direction == 'right' else math.pi / 2.0
         self.avoidance_turn_target = self.normalize_angle(
             self.avoidance_path_heading + turn)
-        self.phase = 'avoid_turn'
+        self.phase = 'avoid_turn_side'
         self.get_logger().warn(
             f'Obstacle detected at {self.front_obstacle_distance():.2f} m; '
             f'choosing {self.avoidance_direction} side '
