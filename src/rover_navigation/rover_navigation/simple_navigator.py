@@ -12,13 +12,13 @@ from sensor_msgs.msg import LaserScan
 
 
 class SimpleNavigator(Node):
-    DRIVE_SPEED = 1.15
-    MAX_TURN_SPEED = 1.0
-    TURN_GAIN = 2.0
-    AVOIDANCE_DRIVE_SECONDS = 1.5
-    OBSTACLE_IGNORE_SECONDS = 2.0
+    DRIVE_SPEED = 0.9
+    MAX_TURN_SPEED = 0.9
+    TURN_GAIN = 1.8
+    AVOIDANCE_DRIVE_SECONDS = 1.8
+    OBSTACLE_IGNORE_SECONDS = 2.5
     WAYPOINT_TOLERANCE = 0.1
-    WAYPOINT_HIT_RADIUS = 0.55
+    WAYPOINT_HIT_RADIUS = 0.8
 
     def __init__(self):
         super().__init__('simple_navigator')
@@ -46,10 +46,11 @@ class SimpleNavigator(Node):
         self.avoidance_attempts = 0
         self.ignore_obstacles_until = 0.0
         self.markers_spawned = False
+        self.startup_marker_cleanup_done = False
         self.pending_marker_deletions = set()
         self.marker_deletions_in_flight = set()
 
-        generator = random.Random()
+        generator = random.Random(7)
         self.waypoints = [
             (generator.uniform(-8.0, 8.0), generator.uniform(-8.0, 8.0))
             for _ in range(3)
@@ -74,6 +75,10 @@ class SimpleNavigator(Node):
             self.stop()
             return
 
+        if not self.startup_marker_cleanup_done:
+            self.cleanup_existing_waypoint_markers()
+            self.startup_marker_cleanup_done = True
+
         self.delete_pending_waypoint_markers()
 
         if self.phase == 'complete':
@@ -89,8 +94,7 @@ class SimpleNavigator(Node):
 
         self.spawn_waypoint_markers()
 
-        if self.current_waypoint_hit():
-            self.complete_current_waypoint('hit')
+        if self.delete_hit_waypoints():
             return
 
         if self.waypoint_timed_out():
@@ -280,8 +284,20 @@ class SimpleNavigator(Node):
         elif self.phase == 'move_y' and abs(target[1] - self.position[1]) <= self.WAYPOINT_TOLERANCE:
             self.complete_current_waypoint('reached')
 
-    def current_waypoint_hit(self):
-        return self.distance_to(self.waypoints[self.current_waypoint]) <= self.WAYPOINT_HIT_RADIUS
+    def delete_hit_waypoints(self):
+        for waypoint_index in list(self.remaining_waypoints):
+            if self.distance_to(self.waypoints[waypoint_index]) > self.WAYPOINT_HIT_RADIUS:
+                continue
+
+            if waypoint_index == self.current_waypoint:
+                self.complete_current_waypoint('hit')
+                return True
+
+            self.get_logger().info(
+                f'Waypoint {waypoint_index + 1} hit; removing marker')
+            self.queue_waypoint_marker_deletion(waypoint_index)
+            self.remaining_waypoints.remove(waypoint_index)
+        return False
 
     def complete_current_waypoint(self, reason):
         waypoint_index = self.current_waypoint
@@ -289,9 +305,14 @@ class SimpleNavigator(Node):
         self.get_logger().info(
             f'Waypoint {waypoint_index + 1} {reason}; removing marker')
         self.queue_waypoint_marker_deletion(waypoint_index)
-        self.remaining_waypoints.remove(waypoint_index)
+        if waypoint_index in self.remaining_waypoints:
+            self.remaining_waypoints.remove(waypoint_index)
         self.current_waypoint = None
         self.phase = 'select_waypoint'
+
+    def cleanup_existing_waypoint_markers(self):
+        for index in range(len(self.waypoints)):
+            self.delete_waypoint_marker_with_gz(index, log_missing=False)
 
     def queue_waypoint_marker_deletion(self, index):
         self.pending_marker_deletions.add(index)
@@ -308,7 +329,7 @@ class SimpleNavigator(Node):
         if not self.delete_marker_client.service_is_ready():
             self.get_logger().warn(
                 f'Remove service is not ready; trying direct Gazebo removal for waypoint {index + 1}')
-            self.delete_waypoint_marker_with_gz(index)
+            self.delete_waypoint_marker_with_gz(index, log_missing=True)
             return
 
         request = DeleteEntity.Request()
@@ -330,15 +351,15 @@ class SimpleNavigator(Node):
             else:
                 self.get_logger().warn(
                     f'Waypoint {index + 1} marker was not removed by bridge; trying direct Gazebo removal')
-                self.delete_waypoint_marker_with_gz(index)
+                self.delete_waypoint_marker_with_gz(index, log_missing=True)
         except Exception as error:
             self.get_logger().error(
                 f'Could not remove waypoint {index + 1} marker: {error}')
-            self.delete_waypoint_marker_with_gz(index)
+            self.delete_waypoint_marker_with_gz(index, log_missing=True)
         finally:
             self.marker_deletions_in_flight.discard(index)
 
-    def delete_waypoint_marker_with_gz(self, index):
+    def delete_waypoint_marker_with_gz(self, index, log_missing):
         marker_name = f'waypoint_marker_{index + 1}'
         try:
             result = subprocess.run(
@@ -348,7 +369,7 @@ class SimpleNavigator(Node):
                     '--reqtype', 'gz.msgs.Entity',
                     '--reptype', 'gz.msgs.Boolean',
                     '--timeout', '1000',
-                    '--req', f'name: "{marker_name}" type: MODEL',
+                    '--req', f'name: "{marker_name}" type: 2',
                 ],
                 capture_output=True,
                 check=False,
@@ -356,8 +377,9 @@ class SimpleNavigator(Node):
                 timeout=2.0,
             )
         except Exception as error:
-            self.get_logger().warn(
-                f'Direct Gazebo removal failed for waypoint {index + 1}: {error}')
+            if log_missing:
+                self.get_logger().warn(
+                    f'Direct Gazebo removal failed for waypoint {index + 1}: {error}')
             return
 
         output = f'{result.stdout}\n{result.stderr}'.lower()
@@ -365,7 +387,7 @@ class SimpleNavigator(Node):
             self.pending_marker_deletions.discard(index)
             self.get_logger().info(
                 f'Waypoint {index + 1} marker removed from Gazebo directly')
-        else:
+        elif log_missing:
             self.get_logger().warn(
                 f'Direct Gazebo removal did not remove waypoint {index + 1}: '
                 f'{result.stdout.strip()} {result.stderr.strip()}')
