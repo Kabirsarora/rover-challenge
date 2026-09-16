@@ -11,6 +11,7 @@ def generate_launch_description():
             '/rover/scan@sensor_msgs/msg/LaserScan@gz.msgs.LaserScan',
             '/model/rover/cmd_vel@geometry_msgs/msg/Twist@gz.msgs.Twist',
             '/world/rover_map/create@ros_gz_interfaces/srv/SpawnEntity',
+            '/world/rover_map/remove@ros_gz_interfaces/srv/DeleteEntity',
         ],
         output='screen',
     )

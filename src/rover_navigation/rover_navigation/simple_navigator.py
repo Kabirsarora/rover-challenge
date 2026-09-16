@@ -6,7 +6,7 @@ import rclpy
 from geometry_msgs.msg import Pose, Twist
 from rclpy.executors import ExternalShutdownException
 from rclpy.node import Node
-from ros_gz_interfaces.srv import SpawnEntity
+from ros_gz_interfaces.srv import DeleteEntity, SpawnEntity
 from sensor_msgs.msg import LaserScan
 
 
@@ -27,6 +27,8 @@ class SimpleNavigator(Node):
             LaserScan, '/rover/scan', self.scan_callback, 10)
         self.marker_client = self.create_client(
             SpawnEntity, '/world/rover_map/create')
+        self.delete_marker_client = self.create_client(
+            DeleteEntity, '/world/rover_map/remove')
         self.timer = self.create_timer(0.1, self.control_loop)
 
         self.position = None
@@ -243,6 +245,7 @@ class SimpleNavigator(Node):
         if distance <= 0.1:
             self.stop()
             self.get_logger().info(f'Waypoint {self.current_waypoint + 1} reached')
+            self.delete_waypoint_marker(self.current_waypoint)
             self.remaining_waypoints.remove(self.current_waypoint)
             self.current_waypoint = None
             self.phase = 'select_waypoint'
@@ -266,9 +269,36 @@ class SimpleNavigator(Node):
         elif self.phase == 'move_y' and abs(target[1] - self.position[1]) <= 0.1:
             self.stop()
             self.get_logger().info(f'Waypoint {self.current_waypoint + 1} reached')
+            self.delete_waypoint_marker(self.current_waypoint)
             self.remaining_waypoints.remove(self.current_waypoint)
             self.current_waypoint = None
             self.phase = 'select_waypoint'
+
+    def delete_waypoint_marker(self, index):
+        if not self.delete_marker_client.service_is_ready():
+            self.get_logger().warn(
+                f'Could not remove waypoint {index + 1} marker; remove service is not ready')
+            return
+
+        request = DeleteEntity.Request()
+        request.entity.name = f'waypoint_marker_{index + 1}'
+        future = self.delete_marker_client.call_async(request)
+        future.add_done_callback(
+            lambda result, marker_index=index: self.marker_deleted_callback(
+                result, marker_index))
+
+    def marker_deleted_callback(self, future, index):
+        try:
+            response = future.result()
+            if response.success:
+                self.get_logger().info(
+                    f'Waypoint {index + 1} marker removed from Gazebo')
+            else:
+                self.get_logger().warn(
+                    f'Waypoint {index + 1} marker was not removed')
+        except Exception as error:
+            self.get_logger().error(
+                f'Could not remove waypoint {index + 1} marker: {error}')
 
     def next_axis_phase(self):
         target = self.waypoints[self.current_waypoint]
