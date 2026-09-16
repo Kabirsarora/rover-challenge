@@ -43,6 +43,8 @@ class SimpleNavigator(Node):
         self.avoidance_attempts = 0
         self.ignore_obstacles_until = 0.0
         self.markers_spawned = False
+        self.pending_marker_deletions = set()
+        self.marker_deletions_in_flight = set()
 
         generator = random.Random(7)
         self.waypoints = [
@@ -68,6 +70,8 @@ class SimpleNavigator(Node):
         if self.position is None or self.yaw is None:
             self.stop()
             return
+
+        self.delete_pending_waypoint_markers()
 
         if self.phase == 'complete':
             self.stop()
@@ -250,7 +254,7 @@ class SimpleNavigator(Node):
         if distance <= 0.1:
             self.stop()
             self.get_logger().info(f'Waypoint {self.current_waypoint + 1} reached')
-            self.delete_waypoint_marker(self.current_waypoint)
+            self.queue_waypoint_marker_deletion(self.current_waypoint)
             self.remaining_waypoints.remove(self.current_waypoint)
             self.current_waypoint = None
             self.phase = 'select_waypoint'
@@ -274,12 +278,23 @@ class SimpleNavigator(Node):
         elif self.phase == 'move_y' and abs(target[1] - self.position[1]) <= 0.1:
             self.stop()
             self.get_logger().info(f'Waypoint {self.current_waypoint + 1} reached')
-            self.delete_waypoint_marker(self.current_waypoint)
+            self.queue_waypoint_marker_deletion(self.current_waypoint)
             self.remaining_waypoints.remove(self.current_waypoint)
             self.current_waypoint = None
             self.phase = 'select_waypoint'
 
+    def queue_waypoint_marker_deletion(self, index):
+        self.pending_marker_deletions.add(index)
+        self.delete_pending_waypoint_markers()
+
+    def delete_pending_waypoint_markers(self):
+        for index in list(self.pending_marker_deletions):
+            self.delete_waypoint_marker(index)
+
     def delete_waypoint_marker(self, index):
+        if index in self.marker_deletions_in_flight:
+            return
+
         if not self.delete_marker_client.service_is_ready():
             self.get_logger().warn(
                 f'Could not remove waypoint {index + 1} marker; remove service is not ready')
@@ -287,6 +302,8 @@ class SimpleNavigator(Node):
 
         request = DeleteEntity.Request()
         request.entity.name = f'waypoint_marker_{index + 1}'
+        request.entity.type = 2
+        self.marker_deletions_in_flight.add(index)
         future = self.delete_marker_client.call_async(request)
         future.add_done_callback(
             lambda result, marker_index=index: self.marker_deleted_callback(
@@ -296,6 +313,7 @@ class SimpleNavigator(Node):
         try:
             response = future.result()
             if response.success:
+                self.pending_marker_deletions.discard(index)
                 self.get_logger().info(
                     f'Waypoint {index + 1} marker removed from Gazebo')
             else:
@@ -304,6 +322,8 @@ class SimpleNavigator(Node):
         except Exception as error:
             self.get_logger().error(
                 f'Could not remove waypoint {index + 1} marker: {error}')
+        finally:
+            self.marker_deletions_in_flight.discard(index)
 
     def next_axis_phase(self):
         target = self.waypoints[self.current_waypoint]
