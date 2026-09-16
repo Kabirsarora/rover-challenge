@@ -1,5 +1,6 @@
 import math
 import random
+import subprocess
 import time
 
 import rclpy
@@ -306,7 +307,8 @@ class SimpleNavigator(Node):
 
         if not self.delete_marker_client.service_is_ready():
             self.get_logger().warn(
-                f'Could not remove waypoint {index + 1} marker; remove service is not ready')
+                f'Remove service is not ready; trying direct Gazebo removal for waypoint {index + 1}')
+            self.delete_waypoint_marker_with_gz(index)
             return
 
         request = DeleteEntity.Request()
@@ -327,12 +329,46 @@ class SimpleNavigator(Node):
                     f'Waypoint {index + 1} marker removed from Gazebo')
             else:
                 self.get_logger().warn(
-                    f'Waypoint {index + 1} marker was not removed')
+                    f'Waypoint {index + 1} marker was not removed by bridge; trying direct Gazebo removal')
+                self.delete_waypoint_marker_with_gz(index)
         except Exception as error:
             self.get_logger().error(
                 f'Could not remove waypoint {index + 1} marker: {error}')
+            self.delete_waypoint_marker_with_gz(index)
         finally:
             self.marker_deletions_in_flight.discard(index)
+
+    def delete_waypoint_marker_with_gz(self, index):
+        marker_name = f'waypoint_marker_{index + 1}'
+        try:
+            result = subprocess.run(
+                [
+                    'gz', 'service',
+                    '-s', '/world/rover_map/remove',
+                    '--reqtype', 'gz.msgs.Entity',
+                    '--reptype', 'gz.msgs.Boolean',
+                    '--timeout', '1000',
+                    '--req', f'name: "{marker_name}" type: MODEL',
+                ],
+                capture_output=True,
+                check=False,
+                text=True,
+                timeout=2.0,
+            )
+        except Exception as error:
+            self.get_logger().warn(
+                f'Direct Gazebo removal failed for waypoint {index + 1}: {error}')
+            return
+
+        output = f'{result.stdout}\n{result.stderr}'.lower()
+        if result.returncode == 0 and ('data: true' in output or 'true' in output):
+            self.pending_marker_deletions.discard(index)
+            self.get_logger().info(
+                f'Waypoint {index + 1} marker removed from Gazebo directly')
+        else:
+            self.get_logger().warn(
+                f'Direct Gazebo removal did not remove waypoint {index + 1}: '
+                f'{result.stdout.strip()} {result.stderr.strip()}')
 
     def next_axis_phase(self):
         target = self.waypoints[self.current_waypoint]
