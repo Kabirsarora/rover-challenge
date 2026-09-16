@@ -17,7 +17,9 @@ class SimpleNavigator(Node):
     AXIS_SLOWDOWN_DISTANCE = 0.8
     MAX_TURN_SPEED = 0.9
     TURN_GAIN = 1.8
-    AVOIDANCE_DRIVE_SECONDS = 1.8
+    OBSTACLE_DETECTION_DISTANCE = 1.25
+    SIDE_CLEARANCE_DISTANCE = 0.75
+    AVOIDANCE_DRIVE_SECONDS = 1.4
     WAYPOINT_TOLERANCE = 0.1
     WAYPOINT_HIT_RADIUS = 0.62
 
@@ -107,7 +109,7 @@ class SimpleNavigator(Node):
             return
 
         if (self.phase in ('move_x', 'move_y') and
-                self.front_obstacle_distance() <= 2.0):
+                self.front_obstacle_distance() <= self.OBSTACLE_DETECTION_DISTANCE):
             self.stop()
             self.phase = 'avoid_turn_right'
             self.avoidance_turn_target = self.normalize_angle(self.yaw - math.pi / 2.0)
@@ -127,7 +129,7 @@ class SimpleNavigator(Node):
             return
 
         if self.phase == 'avoid_check_right':
-            if self.front_obstacle_distance() > 2.0:
+            if self.front_obstacle_distance() > self.SIDE_CLEARANCE_DISTANCE:
                 self.get_logger().info('Right side clear')
                 self.start_avoidance_drive('right')
             else:
@@ -145,7 +147,7 @@ class SimpleNavigator(Node):
             return
 
         if self.phase == 'avoid_check_left':
-            if self.front_obstacle_distance() > 2.0:
+            if self.front_obstacle_distance() > self.SIDE_CLEARANCE_DISTANCE:
                 self.get_logger().info('Left side clear')
                 self.start_avoidance_drive('left')
             else:
@@ -163,7 +165,7 @@ class SimpleNavigator(Node):
             return
 
         if self.phase == 'avoid_check_extra':
-            if self.front_obstacle_distance() > 2.0:
+            if self.front_obstacle_distance() > self.SIDE_CLEARANCE_DISTANCE:
                 self.get_logger().info('Another direction is clear')
                 self.start_avoidance_drive('extra')
             else:
