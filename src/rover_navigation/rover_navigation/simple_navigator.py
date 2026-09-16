@@ -13,12 +13,13 @@ from sensor_msgs.msg import LaserScan
 
 class SimpleNavigator(Node):
     DRIVE_SPEED = 0.9
+    MIN_DRIVE_SPEED = 0.18
+    AXIS_SLOWDOWN_DISTANCE = 0.8
     MAX_TURN_SPEED = 0.9
     TURN_GAIN = 1.8
     AVOIDANCE_DRIVE_SECONDS = 1.8
-    OBSTACLE_IGNORE_SECONDS = 2.5
     WAYPOINT_TOLERANCE = 0.1
-    WAYPOINT_HIT_RADIUS = 0.8
+    WAYPOINT_HIT_RADIUS = 0.62
 
     def __init__(self):
         super().__init__('simple_navigator')
@@ -44,9 +45,9 @@ class SimpleNavigator(Node):
         self.avoidance_direction = None
         self.avoidance_turn_target = None
         self.avoidance_attempts = 0
-        self.ignore_obstacles_until = 0.0
         self.markers_spawned = False
         self.startup_marker_cleanup_done = False
+        self.hidden_waypoint_markers = set()
         self.pending_marker_deletions = set()
         self.marker_deletions_in_flight = set()
 
@@ -94,8 +95,7 @@ class SimpleNavigator(Node):
 
         self.spawn_waypoint_markers()
 
-        if self.delete_hit_waypoints():
-            return
+        self.delete_hit_waypoint_markers()
 
         if self.waypoint_timed_out():
             self.stop()
@@ -107,7 +107,6 @@ class SimpleNavigator(Node):
             return
 
         if (self.phase in ('move_x', 'move_y') and
-                time.monotonic() >= self.ignore_obstacles_until and
                 self.front_obstacle_distance() <= 2.0):
             self.stop()
             self.phase = 'avoid_turn_right'
@@ -176,7 +175,6 @@ class SimpleNavigator(Node):
             self.drive_forward()
             if time.monotonic() - self.avoidance_started_at >= self.AVOIDANCE_DRIVE_SECONDS:
                 self.stop()
-                self.ignore_obstacles_until = time.monotonic() + self.OBSTACLE_IGNORE_SECONDS
                 self.phase = 'resume_path'
                 self.get_logger().info('Resuming path toward waypoint')
             return
@@ -262,49 +260,48 @@ class SimpleNavigator(Node):
         self.log_status(f'Current rover position: x={self.position[0]:.2f}, y={self.position[1]:.2f}')
         self.log_status(f'Distance remaining: {distance:.2f} m')
 
-        if distance <= self.WAYPOINT_TOLERANCE:
-            self.complete_current_waypoint('reached')
-            return
-
         if self.phase == 'move_x':
-            target_heading = 0.0 if target[0] > self.position[0] else math.pi
+            axis_error = target[0] - self.position[0]
+            if abs(axis_error) <= self.WAYPOINT_TOLERANCE:
+                self.stop()
+                self.phase = 'move_y'
+                return
+            target_heading = 0.0 if axis_error > 0.0 else math.pi
             self.get_logger().debug('Moving along X axis')
         else:
-            target_heading = math.pi / 2.0 if target[1] > self.position[1] else -math.pi / 2.0
+            axis_error = target[1] - self.position[1]
+            if abs(axis_error) <= self.WAYPOINT_TOLERANCE:
+                self.complete_current_waypoint('reached')
+                return
+            target_heading = math.pi / 2.0 if axis_error > 0.0 else -math.pi / 2.0
             self.get_logger().debug('Moving along Y axis')
 
         if abs(self.angle_error(target_heading)) > 0.08:
             self.rotate_to(target_heading)
         else:
-            self.drive_forward()
+            speed = max(
+                self.MIN_DRIVE_SPEED,
+                self.DRIVE_SPEED * min(1.0, abs(axis_error) / self.AXIS_SLOWDOWN_DISTANCE),
+            )
+            self.drive_forward(speed)
 
-        if self.phase == 'move_x' and abs(target[0] - self.position[0]) <= self.WAYPOINT_TOLERANCE:
-            self.stop()
-            self.phase = 'move_y'
-        elif self.phase == 'move_y' and abs(target[1] - self.position[1]) <= self.WAYPOINT_TOLERANCE:
-            self.complete_current_waypoint('reached')
-
-    def delete_hit_waypoints(self):
+    def delete_hit_waypoint_markers(self):
         for waypoint_index in list(self.remaining_waypoints):
+            if waypoint_index in self.hidden_waypoint_markers:
+                continue
             if self.distance_to(self.waypoints[waypoint_index]) > self.WAYPOINT_HIT_RADIUS:
                 continue
 
-            if waypoint_index == self.current_waypoint:
-                self.complete_current_waypoint('hit')
-                return True
-
             self.get_logger().info(
                 f'Waypoint {waypoint_index + 1} hit; removing marker')
-            self.queue_waypoint_marker_deletion(waypoint_index)
-            self.remaining_waypoints.remove(waypoint_index)
-        return False
+            self.hide_waypoint_marker(waypoint_index)
 
     def complete_current_waypoint(self, reason):
         waypoint_index = self.current_waypoint
         self.stop()
         self.get_logger().info(
             f'Waypoint {waypoint_index + 1} {reason}; removing marker')
-        self.queue_waypoint_marker_deletion(waypoint_index)
+        self.hide_waypoint_marker(waypoint_index)
         if waypoint_index in self.remaining_waypoints:
             self.remaining_waypoints.remove(waypoint_index)
         self.current_waypoint = None
@@ -317,6 +314,12 @@ class SimpleNavigator(Node):
     def queue_waypoint_marker_deletion(self, index):
         self.pending_marker_deletions.add(index)
         self.delete_pending_waypoint_markers()
+
+    def hide_waypoint_marker(self, index):
+        if index in self.hidden_waypoint_markers:
+            return
+        self.hidden_waypoint_markers.add(index)
+        self.queue_waypoint_marker_deletion(index)
 
     def delete_pending_waypoint_markers(self):
         for index in list(self.pending_marker_deletions):
@@ -427,9 +430,9 @@ class SimpleNavigator(Node):
         self.cmd_publisher.publish(command)
         self.get_logger().debug('Rotating to face a direction')
 
-    def drive_forward(self):
+    def drive_forward(self, speed=None):
         command = Twist()
-        command.linear.x = self.DRIVE_SPEED
+        command.linear.x = self.DRIVE_SPEED if speed is None else speed
         self.cmd_publisher.publish(command)
 
     def stop(self):
